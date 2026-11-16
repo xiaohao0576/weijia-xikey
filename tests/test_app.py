@@ -130,6 +130,18 @@ def test_login_and_pages(monkeypatch, tmp_path):
     assert browser.get("/manifest.webmanifest").json()["start_url"] == "/"
 
 
+def test_checkin_photo_heading_and_accessible_picker(monkeypatch, tmp_path):
+    browser, _ = client(monkeypatch, tmp_path)
+    checkin = browser.get("/checkin").text
+
+    assert re.search(r'<h2[^>]*>\s*ផ្ទុករូបភាពឡើង\s*<img[^>]*src="/static/timemark-logo.webp"',
+                     checkin)
+    assert not re.search(r'<label[^>]*for="visit-photo"', checkin)
+    assert 'aria-label="Add TimeMark photos (1–3)"' in checkin
+    assert re.search(r'<input(?=[^>]*id="visit-photo")(?=[^>]*\brequired\b)[^>]*>', checkin)
+    assert browser.get("/static/timemark-logo.webp").status_code == 200
+
+
 def test_welcome_photo_uses_current_employee_and_not_cookie(monkeypatch, tmp_path):
     browser, fake = client(monkeypatch, tmp_path)
     photo = image_data()

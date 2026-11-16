@@ -39,7 +39,7 @@ app, rt = fast_app(
         Meta(name="viewport", content="width=device-width, initial-scale=1"),
         Meta(name="theme-color", content="#1769aa"),
         Link(rel="manifest", href="/manifest.webmanifest"),
-        Link(rel="stylesheet", href="/static/app.css?v=13"),
+        Link(rel="stylesheet", href="/static/app.css?v=14"),
         Script(src="/static/app.js?v=13", defer=True),
     ),
     secret_key=secret,
@@ -234,9 +234,9 @@ def hidden_position_fields():
             Input(type="hidden", name="accuracy", id="accuracy"))
 
 
-def photo_picker(input_id, label, *, multiple=False, required=False, name=None):
+def photo_picker(input_id, label, *, multiple=False, required=False, name=None, show_label=True):
     return Div(
-        Label(label, fr=input_id),
+        Label(label, fr=input_id) if show_label else (),
         Div(Div(cls="photo-previews"),
             Label(Span("+", aria_hidden="true"),
                   Input(type="file", name=name, accept="image/*", id=input_id,
@@ -291,20 +291,20 @@ async def get(request: Request):
     return page("New customer",
         P("Create a new shop profile.", cls="page-subtitle"),
         Form(Div(
-            Div(P("01", cls="section-number"), H2("Shop details", cls="section-title"), cls="card-heading"),
-            Div(Label("Shop name", fr="name"), Input(name="name", id="name"), cls="field"),
-            Div(Label("Phone", fr="phone"),
+            Div(P("01", cls="section-number"), H2("Shop details | ព័ត៌មានហាង", cls="section-title"), cls="card-heading"),
+            Div(Label("Shop name | ឈ្មោះហាង", fr="name"), Input(name="name", id="name"), cls="field"),
+            Div(Label("Phone | ទូរស័ព្ទ", fr="phone"),
                 Div(Span("+855", cls="phone-prefix", id="phone-prefix"),
                     Input(name="phone", id="phone", inputmode="numeric", autocomplete="tel-national",
                           aria_describedby="phone-prefix"),
                     cls="phone-input"), cls="field"),
-            Div(Label("Position"), Div(*(Label(Input(type="radio", name="function", value=value), text, cls="choice")
+            Div(Label("Position | តួនាទី"), Div(*(Label(Input(type="radio", name="function", value=value), text, cls="choice")
                  for value, text in [("Owner", "👑 Owner"), ("Manager", "🧑‍💼 Manager"), ("Staff", "🧑 Staff")]), cls="choices"), cls="field"),
-            Div(Label("Customer language"), Div(*(Label(Input(type="radio", name="lang", value=value), text, cls="choice")
+            Div(Label("Customer language | ភាសាអតិថិជន"), Div(*(Label(Input(type="radio", name="lang", value=value), text, cls="choice")
                  for value, text in [("zh_CN", "🇨🇳 中文"), ("en_US", "🇺🇸 English"), ("km_KH", "🇰🇭 ខ្មែរ")]), cls="choices"), cls="field"),
-            photo_picker("photo", "Shop photo", name="photo"),
+            photo_picker("photo", "Shop photo | រូបភាពហាង", name="photo"),
             cls="panel form-panel"),
-            Div(Div(P("02", cls="section-number"), H2("Customer location", cls="section-title"), cls="card-heading"),
+            Div(Div(P("02", cls="section-number"), H2("Customer location | ទីតាំងអតិថិជន", cls="section-title"), cls="card-heading"),
                 *hidden_position_fields(),
                 Button(Span("Select location on map", id="selected-location"),
                        Span("›", aria_hidden="true", cls="customer-select-arrow"),
@@ -312,7 +312,7 @@ async def get(request: Request):
                        aria_haspopup="dialog", aria_controls="customer-map-dialog"),
                 cls="panel form-panel"),
             Div(Div(P("03", cls="section-number"), H2("Tags / ស្លាក", cls="section-title"), cls="card-heading"), *tags,
-            Div(Label("Notes", fr="comment"), Textarea(name="comment", id="comment"), cls="field"),
+            Div(Label("Notes | កំណត់ចំណាំ", fr="comment"), Textarea(name="comment", id="comment"), cls="field"),
             cls="panel form-panel"),
             P("", id="operation-status", role="status", cls="notice"),
             Button("Create customer", type="submit", id="submit", cls="app-button primary full"),
@@ -343,14 +343,19 @@ def get(request: Request):
     return page("Check in",
         P("Record your visit in a few steps.", cls="page-subtitle"),
         Form(Input(type="hidden", name="partner_id", id="partner_id"),
-             Div(Div(P("01", cls="section-number"), H2("Select a customer", cls="section-title"), cls="card-heading"),
+             Div(Div(P("01", cls="section-number"), H2("ជ្រើសរើសអតិថិជន", cls="section-title"), cls="card-heading"),
                  Button(Span("Select a customer", id="selected-customer"),
                         Span("›", aria_hidden="true", cls="customer-select-arrow"),
                         type="button", id="open-customer-map", cls="customer-select",
                         aria_haspopup="dialog", aria_controls="customer-map-dialog"),
                  cls="panel form-panel"),
-             Div(Div(P("02", cls="section-number"), H2("Visit details", cls="section-title"), cls="card-heading"),
-                 photo_picker("visit-photo", "TimeMark photos (1–3)", multiple=True, required=True),
+             Div(Div(P("02", cls="section-number"),
+                     H2("ផ្ទុករូបភាពឡើង",
+                        Img(src="/static/timemark-logo.webp", alt="TimeMark", width="24", height="24",
+                            cls="section-logo"),
+                        cls="section-title"), cls="card-heading"),
+                 photo_picker("visit-photo", "TimeMark photos (1–3)", multiple=True, required=True,
+                              show_label=False),
                  P("Select original photos from TimeMark. Up to 3 photos, 20 MB each.", cls="helper-text"),
                  Div(Label("Notes", fr="checkin-notes"), Textarea(name="comment", id="checkin-notes"), cls="field"),
                  cls="panel form-panel"),

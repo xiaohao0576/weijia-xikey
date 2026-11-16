@@ -56,7 +56,7 @@ def validate_visit_photos(photos) -> list[VisitPhoto]:
         if image_format not in FORMATS:
             raise PhotoValidationError(prefix + "use a JPEG, PNG, or WebP image.")
         if not isinstance(software, str) or not TIMEMARK_SOFTWARE.search(software):
-            raise PhotoValidationError(prefix + "this photo does not meet the requirements. Please take photos with the TimeMark app and upload them.")
+            raise PhotoValidationError(prefix + "សូមថតរូបដោយប្រើកម្មវិធី TimeMark រួចបង្ហោះរូបទាំងនោះ។")
         extension, mimetype = FORMATS[image_format]
         result.append(VisitPhoto(encoded, extension, mimetype))
     return result

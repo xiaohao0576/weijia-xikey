@@ -128,6 +128,7 @@ body {
 .app-shell #login-form select { margin-bottom: 17px; }
 .app-shell .form-panel { padding: 19px; }
 .app-shell .card-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.app-shell .section-logo { display: inline-block; width: 24px; height: 24px; margin-left: 8px; vertical-align: middle; border-radius: 5px; }
 .app-shell .section-number { display: grid; place-items: center; width: 32px; height: 32px; margin: 0; border-radius: 10px; background: #e9f3ff; color: #1767c2; font-size: 12px; font-weight: 800; }
 .app-shell .field { margin: 0 0 17px; }
 .app-shell .field:last-child { margin-bottom: 0; }
