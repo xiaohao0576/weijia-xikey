@@ -39,7 +39,7 @@ app, rt = fast_app(
         Meta(name="viewport", content="width=device-width, initial-scale=1"),
         Meta(name="theme-color", content="#1769aa"),
         Link(rel="manifest", href="/manifest.webmanifest"),
-        Link(rel="stylesheet", href="/static/app.css?v=11"),
+        Link(rel="stylesheet", href="/static/app.css?v=13"),
         Script(src="/static/app.js?v=13", defer=True),
     ),
     secret_key=secret,
@@ -166,15 +166,30 @@ async def get(request: Request):
                              Button("Sign in", type="submit", cls="app-button primary full"),
                              id="login-form"),
                         cls="panel login-panel"), home=True)
+    employee_name = request.session.get("employee_name", "")
+    photo_error = False
+    try:
+        employees = await call("hr.employee", "read", ids=[request.session["employee_id"]],
+                               fields=["image_512"])
+        if not employees or not isinstance(employees[0], dict) or "image_512" not in employees[0]:
+            raise OdooError("Employee photo lookup returned an invalid response.")
+        photo = employees[0]["image_512"]
+        if photo and not isinstance(photo, str):
+            raise OdooError("Employee photo lookup returned an invalid image.")
+    except OdooError:
+        log.exception("Employee photo lookup failed")
+        photo = None
+        photo_error = True
+    avatar = Img(src=f"data:image/png;base64,{photo}" if photo else "/static/avatar-placeholder.svg",
+                 alt="", cls="hero-avatar-image")
     return page("Sales",
                 Div(Span("✓", cls="success-icon", aria_hidden="true"),
                     Div(H2("Check-in successful"), P("Your visit has been recorded.")),
                     id="checkin-success", cls="success-banner", role="status", hidden=True),
-                Div(P("WELCOME BACK", cls="hero-kicker"),
-                    H2(request.session.get("employee_name", "")),
-                    P("Your daily work, all in one place.", cls="hero-copy"),
-                    Div("✦", cls="hero-decoration", aria_hidden="true"),
+                Div(Div(Div(avatar, cls="hero-avatar"),
+                        H2(employee_name), cls="hero-profile"),
                     cls="welcome-card"),
+                P("Photo unavailable", cls="hero-photo-error", role="status") if photo_error else (),
                 Div(H2("Your tools", cls="section-title"),
                     P("Choose an action to get started", cls="section-subtitle"), cls="section-heading"),
                 Div(

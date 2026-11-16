@@ -4,7 +4,7 @@
 
 ## 前置条件
 
-- Odoo SaaS 19.4 或 20.0，允许使用 External JSON-2 API；配置的集成账号需要读取 `hr.employee`（包括 `pin`、`active` 和 `work_contact_id`）、读写 `res.partner`、读取 `res.partner.category`、创建 `ir.attachment` 和调用 `message_post` 的权限。每位打卡员工必须配置工作联系人；打卡消息的作者为该联系人，缺少联系人时不会创建附件或消息。
+- Odoo SaaS 19.4 或 20.0，允许使用 External JSON-2 API；配置的集成账号需要读取 `hr.employee`（包括 `pin`、`active`、`image_512` 和 `work_contact_id`）、读写 `res.partner`、读取 `res.partner.category`、创建 `ir.attachment` 和调用 `message_post` 的权限。每位打卡员工必须配置工作联系人；打卡消息的作者为该联系人，缺少联系人时不会创建附件或消息。
 - Odoo 已配置 `res.partner.x_employee_id`、所需语言及标签。项目使用 `res.partner.zip` 保存 9 位 geoHash，不保留原邮编用途；附近查询同时兼容以前保存的 7 位和 8 位 geoHash，不会自动修改旧记录。已有客户只有具备本应用兼容的 geoHash 和坐标才能出现在附近查询中。
 - 启用 Google Maps JavaScript API，配置浏览器可使用的 Key 和域名限制；Google 地图使用情况可能产生费用。
 - 手机能通过 HTTPS 访问应用；Caddy 负责 HTTPS 和反向代理。实际手机和 Odoo 环境需要由 IT 验证。
@@ -17,6 +17,8 @@
 4. IT 在员工手机访问 `https://你的域名/`，然后安装到桌面并验证桌面启动、员工选择、PIN、定位、地图和相机。首次使用时选择员工并输入 PIN，验证成功后应用在该浏览器或 PWA 环境中记住员工；之后只需输入 PIN。浏览器和已安装 PWA 可能使用不同的网站数据，需分别测试首次登录。
 
 员工信息保存在签名 Cookie 中，有效期为一年；闲置会话仍在一小时后过期。清除对应网站数据或 Cookie 失效后需要重新选择员工。旧安装链接中的员工 ID 参数不再生效；此前已成功登录且 Cookie 仍有效的用户会继续使用已记住的员工。本应用不提供退出或切换员工按钮；需要更换员工时，由 IT 清除对应浏览器或 PWA 的网站数据，再重新选择。
+
+登录后的首页从 Odoo 读取当前员工的 `image_512` 照片并以圆形头像显示，照片不存入 Cookie。员工没有照片时显示人像占位图；读取失败时首页仍可使用，并提示照片不可用。
 
 `COOKIE_SECURE=true` 适用于 HTTPS 生产环境。本机使用纯 HTTP 开发时可设为 `false`；不要在生产环境关闭。`DATA_DIR` 指定数据库目录，默认 `data`。`GET /health` 只检查进程可响应，不代表 Odoo 和 Google Maps 可用。应用日志不应包含 PIN 或 API Key。
 

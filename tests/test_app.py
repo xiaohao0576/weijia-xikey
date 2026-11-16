@@ -23,6 +23,7 @@ class FakeOdoo:
     def __init__(self):
         self.calls = []
         self.fail_method = None
+        self.employee_photos = {1: False, 2: False}
 
     def call(self, model, method, **kwargs):
         self.calls.append((model, method, kwargs))
@@ -31,6 +32,8 @@ class FakeOdoo:
         if model == "hr.employee":
             if method == "search_read":
                 return [{"id": 1, "name": "Salesperson"}, {"id": 2, "name": "Second Employee"}]
+            if kwargs["fields"] == ["image_512"]:
+                return [{"image_512": self.employee_photos[kwargs["ids"][0]]}]
             if kwargs["ids"] == [1]:
                 return [{"name": "Salesperson", "pin": "1234", "active": True,
                          "work_contact_id": [101, "Salesperson"]}]
@@ -125,6 +128,53 @@ def test_login_and_pages(monkeypatch, tmp_path):
     assert browser.get("/static/app.js").status_code == 200
     assert browser.get("/service-worker").status_code == 200
     assert browser.get("/manifest.webmanifest").json()["start_url"] == "/"
+
+
+def test_welcome_photo_uses_current_employee_and_not_cookie(monkeypatch, tmp_path):
+    browser, fake = client(monkeypatch, tmp_path)
+    photo = image_data()
+    fake.employee_photos[1] = photo
+
+    home = browser.get("/")
+    assert home.status_code == 200
+    assert f'data:image/png;base64,{photo}' in home.text
+    assert 'class="hero-avatar-image"' in home.text
+    assert "WELCOME BACK" not in home.text
+    assert "Your daily work, all in one place." not in home.text
+    assert re.search(r'class="hero-profile">.*?class="hero-avatar".*?</div>\s*<h2>Salesperson</h2>',
+                     home.text, re.DOTALL)
+    assert fake.calls[-1] == ("hr.employee", "read", {"ids": [1], "fields": ["image_512"]})
+    assert photo not in home.headers.get("set-cookie", "")
+
+    browser.cookies.clear()
+    fake.employee_photos[2] = photo
+    assert browser.post("/api/login", json={"employee_id": 2, "pin": "5678"}).status_code == 200
+    assert f'data:image/png;base64,{photo}' in browser.get("/").text
+    assert fake.calls[-1][2]["ids"] == [2]
+
+
+def test_welcome_photo_placeholder_and_lookup_failure(monkeypatch, tmp_path, caplog):
+    browser, fake = client(monkeypatch, tmp_path)
+    home = browser.get("/")
+    assert 'class="hero-avatar"' in home.text
+    assert 'src="/static/avatar-placeholder.svg"' in home.text
+    assert "Photo unavailable" not in home.text
+    assert browser.get("/static/avatar-placeholder.svg").status_code == 200
+
+    fake.fail_method = "read"
+    home = browser.get("/")
+    assert home.status_code == 200
+    assert "Photo unavailable" in home.text and "New customer" in home.text
+    assert "Employee photo lookup failed" in caplog.text
+
+
+def test_welcome_photo_not_fetched_before_login_or_after_expiration(monkeypatch, tmp_path):
+    browser, fake = client(monkeypatch, tmp_path)
+    now = application.time.time()
+    monkeypatch.setattr(application.time, "time", lambda: now + 3601)
+    fake.calls.clear()
+    assert 'id="login-form"' in browser.get("/").text
+    assert not [call for call in fake.calls if call[1] == "read"]
 
 
 def test_create_deduplicates_and_edit_keeps_owner(monkeypatch, tmp_path):
