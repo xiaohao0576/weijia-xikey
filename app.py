@@ -39,8 +39,8 @@ app, rt = fast_app(
         Meta(name="viewport", content="width=device-width, initial-scale=1"),
         Meta(name="theme-color", content="#1769aa"),
         Link(rel="manifest", href="/manifest.webmanifest"),
-        Link(rel="stylesheet", href="/static/app.css?v=10"),
-        Script(src="/static/app.js?v=12", defer=True),
+        Link(rel="stylesheet", href="/static/app.css?v=11"),
+        Script(src="/static/app.js?v=13", defer=True),
     ),
     secret_key=secret,
     max_age=31536000,
@@ -219,6 +219,18 @@ def hidden_position_fields():
             Input(type="hidden", name="accuracy", id="accuracy"))
 
 
+def photo_picker(input_id, label, *, multiple=False, required=False, name=None):
+    return Div(
+        Label(label, fr=input_id),
+        Div(Div(cls="photo-previews"),
+            Label(Span("+", aria_hidden="true"),
+                  Input(type="file", name=name, accept="image/*", id=input_id,
+                        multiple=multiple, required=required, aria_label=f"Add {label}"),
+                  cls="photo-add"),
+            cls="photo-picker"),
+        cls="field")
+
+
 def map_fields():
     return (Button("⌖  Find my location", type="button", id="locate", cls="app-button secondary"),
             Div(id="map", cls="map"), P("", id="location-status", cls="helper-text", role="status"))
@@ -275,7 +287,7 @@ async def get(request: Request):
                  for value, text in [("Owner", "👑 Owner"), ("Manager", "🧑‍💼 Manager"), ("Staff", "🧑 Staff")]), cls="choices"), cls="field"),
             Div(Label("Customer language"), Div(*(Label(Input(type="radio", name="lang", value=value), text, cls="choice")
                  for value, text in [("zh_CN", "🇨🇳 中文"), ("en_US", "🇺🇸 English"), ("km_KH", "🇰🇭 ខ្មែរ")]), cls="choices"), cls="field"),
-            Div(Label("Shop photo", fr="photo"), Input(type="file", name="photo", accept="image/*", id="photo"), cls="field"),
+            photo_picker("photo", "Shop photo", name="photo"),
             cls="panel form-panel"),
             Div(Div(P("02", cls="section-number"), H2("Customer location", cls="section-title"), cls="card-heading"),
                 *hidden_position_fields(),
@@ -323,10 +335,8 @@ def get(request: Request):
                         aria_haspopup="dialog", aria_controls="customer-map-dialog"),
                  cls="panel form-panel"),
              Div(Div(P("02", cls="section-number"), H2("Visit details", cls="section-title"), cls="card-heading"),
-                 Div(Label("TimeMark photos (1–3)", fr="visit-photo"),
-                     Input(type="file", accept="image/*", id="visit-photo", multiple=True, required=True),
-                     P("Select original photos from TimeMark. Up to 3 photos, 20 MB each.", cls="helper-text"),
-                     cls="field"),
+                 photo_picker("visit-photo", "TimeMark photos (1–3)", multiple=True, required=True),
+                 P("Select original photos from TimeMark. Up to 3 photos, 20 MB each.", cls="helper-text"),
                  Div(Label("Notes", fr="checkin-notes"), Textarea(name="comment", id="checkin-notes"), cls="field"),
                  cls="panel form-panel"),
              P("", id="operation-status", role="status", cls="notice"),
@@ -437,6 +447,8 @@ async def put(request: Request, token: str):
               "category_id": [[6, 0, data.get("tags", [])]]}
     if data.get("photo"):
         values["image_1920"] = data["photo"]
+    elif data.get("remove_photo") is True:
+        values["image_1920"] = False
     try:
         if data.get("latitude") not in (None, "") and data.get("longitude") not in (None, ""):
             lat, lon = float(data["latitude"]), float(data["longitude"])

@@ -84,6 +84,9 @@ def test_login_and_pages(monkeypatch, tmp_path):
     assert 'class="app-button primary full"' in customer.text
     assert 'class="app-button secondary"' in customer.text
     assert 'id="customer-form"' in customer.text
+    assert 'class="photo-picker"' in customer.text
+    assert 'class="photo-previews"' in customer.text
+    assert 'aria-label="Add Shop photo"' in customer.text
     assert 'id="phone-prefix"' in customer.text and "+855" in customer.text
     assert 'aria-describedby="phone-prefix"' in customer.text
     assert "Phone (+855)" not in customer.text
@@ -107,6 +110,9 @@ def test_login_and_pages(monkeypatch, tmp_path):
     assert 'class="app-button primary full"' in checkin.text
     assert checkin.text.count('type="file"') == 1
     assert 'id="visit-photo"' in checkin.text
+    assert 'class="photo-picker"' in checkin.text
+    assert 'class="photo-previews"' in checkin.text
+    assert 'aria-label="Add TimeMark photos (1–3)"' in checkin.text
     assert 'accept="image/*"' in checkin.text
     assert "multiple" in checkin.text
     assert "https://landing.timemark.com/go?" in checkin.text
@@ -139,6 +145,22 @@ def test_create_deduplicates_and_edit_keeps_owner(monkeypatch, tmp_path):
     write = [c for c in fake.calls if c[1] == "write"][0]
     assert write[2]["ids"] == [42] and "x_employee_id" not in write[2]["vals"]
     assert write[2]["vals"]["zip"] == "w649ew87t"
+
+
+def test_customer_update_removes_photo_only_when_requested(monkeypatch, tmp_path):
+    browser, fake = client(monkeypatch, tmp_path)
+    token = str(uuid.uuid4())
+    payload = {"token": token, "name": "Shop", "photo": "original"}
+    assert browser.post("/api/customer", json=payload).json()["status"] == "success"
+
+    assert browser.put(f"/api/customer/{token}", json={"name": "Shop"}).status_code == 200
+    assert "image_1920" not in fake.calls[-1][2]["vals"]
+
+    assert browser.put(f"/api/customer/{token}", json={"name": "Shop", "remove_photo": True}).status_code == 200
+    assert fake.calls[-1][2]["vals"]["image_1920"] is False
+
+    assert browser.put(f"/api/customer/{token}", json={"name": "Shop", "photo": "replacement", "remove_photo": True}).status_code == 200
+    assert fake.calls[-1][2]["vals"]["image_1920"] == "replacement"
 
 
 def test_uncertain_create_is_persisted_and_never_retried(monkeypatch, tmp_path):

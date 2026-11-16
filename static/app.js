@@ -286,6 +286,59 @@ function values(form) {
   return Object.fromEntries(data.entries());
 }
 
+document.querySelectorAll(".photo-picker").forEach((picker) => {
+  const input = picker.querySelector('input[type="file"]');
+  const previews = picker.querySelector(".photo-previews");
+  const add = picker.querySelector(".photo-add");
+  const maxPhotos = input.multiple ? 3 : 1;
+  let files = [];
+  let urls = [];
+
+  function render() {
+    urls.forEach((url) => URL.revokeObjectURL(url));
+    urls = [];
+    previews.replaceChildren();
+    files.forEach((file, index) => {
+      const item = document.createElement("div");
+      item.className = "photo-preview";
+      const image = document.createElement("img");
+      image.alt = `Selected photo ${index + 1}`;
+      image.src = URL.createObjectURL(file);
+      urls.push(image.src);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "photo-remove";
+      remove.setAttribute("aria-label", `Remove photo ${index + 1}`);
+      remove.textContent = "×";
+      remove.addEventListener("click", () => {
+        files.splice(index, 1);
+        syncInput();
+        render();
+      });
+      item.append(image, remove);
+      previews.append(item);
+    });
+    add.hidden = files.length >= maxPhotos;
+  }
+
+  function syncInput() {
+    const selection = new DataTransfer();
+    files.forEach((file) => selection.items.add(file));
+    input.files = selection.files;
+  }
+
+  input.addEventListener("change", () => {
+    const selected = [...input.files];
+    if (files.length + selected.length > maxPhotos) {
+      notice(`Select up to ${maxPhotos} photos.`);
+    } else {
+      files = files.concat(selected);
+    }
+    syncInput();
+    render();
+  });
+});
+
 function photoBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -298,7 +351,11 @@ function photoBase64(file) {
 function operationKey(kind) { return `sales-pwa-${kind}-operation`; }
 function reference() { return crypto.randomUUID(); }
 function setStatus(message) { $("#operation-status").textContent = message; }
-function setBusy(form, busy) { form.querySelector("#submit").disabled = busy; }
+function setBusy(form, busy) {
+  form.querySelector("#submit").disabled = busy;
+  form.querySelectorAll('.photo-picker input[type="file"], .photo-remove')
+    .forEach((control) => { control.disabled = busy; });
+}
 
 const checkinSuccess = $("#checkin-success");
 if (checkinSuccess && sessionStorage.getItem("sales-pwa-checkin-success")) {
@@ -350,6 +407,7 @@ async function restoreOperation(form, kind) {
 }
 
 const customerForm = $("#customer-form");
+let savedCustomerPhoto = false;
 function saveDraft(form) {
   const fields = {};
   for (const element of form.elements) {
@@ -392,6 +450,7 @@ if (customerForm) {
         photo: await compressedPhoto($("#photo").files[0])};
     } catch (error) { notice(`Image preparation failed: ${error.message}`); setBusy(customerForm, false); return; }
     const editing = Boolean(customerForm.dataset.partnerId);
+    payload.remove_photo = editing && savedCustomerPhoto && !payload.photo;
     const token = editing ? customerForm.dataset.token : reference();
     payload.token = token;
     if (!editing) localStorage.setItem(operationKey("customer"), token);
@@ -400,6 +459,8 @@ if (customerForm) {
       const result = await api(editing ? `/api/customer/${token}` : "/api/customer",
         {method: editing ? "PUT" : "POST", body: JSON.stringify(payload)});
       if (result.status === "success") {
+        if (payload.photo) savedCustomerPhoto = true;
+        else if (payload.remove_photo) savedCustomerPhoto = false;
         customerForm.dataset.partnerId = result.partner_id;
         customerForm.dataset.token = token;
         $("#submit").textContent = "Update customer";
