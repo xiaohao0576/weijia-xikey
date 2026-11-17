@@ -26,7 +26,10 @@ async function api(url, options = {}) {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });
   const data = await response.json();
-  if (data.login) { location.href = "/"; throw new Error(data.error); }
+  if (data.login) {
+    if (!options.signal?.aborted) location.href = "/";
+    throw new Error(data.error);
+  }
   if (!response.ok) {
     const error = new Error(data.error || "Request failed.");
     error.validation = data.validation === true;
@@ -351,6 +354,9 @@ function photoBase64(file) {
 function operationKey(kind) { return `sales-pwa-${kind}-operation`; }
 function reference() { return crypto.randomUUID(); }
 function setStatus(message) { $("#operation-status").textContent = message; }
+function uncertainStatus(token, detail = "") {
+  setStatus(`Outcome not confirmed (reference ${token}). You can submit again, but this may create a duplicate.${detail ? ` ${detail}` : ""}`);
+}
 function setBusy(form, busy) {
   form.querySelector("#submit").disabled = busy;
   form.querySelectorAll('.photo-picker input[type="file"], .photo-remove')
@@ -369,41 +375,44 @@ function finishCheckin() {
   location.replace("/");
 }
 
-async function restoreOperation(form, kind) {
+function restoreOperation(form, kind) {
   const token = localStorage.getItem(operationKey(kind));
-  if (!token) return;
-  setBusy(form, true);
-  try {
-    const result = await api(`/api/operations/${encodeURIComponent(token)}`);
-    if (result.status === "success" && kind === "customer" && performance.getEntriesByType("navigation")[0]?.type !== "reload") {
-      localStorage.removeItem(operationKey(kind));
-      setStatus("Previous customer was created. Start a new customer.");
-      setBusy(form, false);
-    } else if (result.status === "success" && kind === "customer") {
-      form.dataset.token = token;
-      form.dataset.partnerId = result.partner_id;
-      setStatus(`Customer created: #${result.partner_id}. You can edit on this page.`);
-      $("#submit").textContent = "Update customer";
-      setBusy(form, false);
-    } else if (result.status === "failed") {
-      localStorage.removeItem(operationKey(kind));
-      setStatus(`Request failed (${token}). ${result.detail || ""} You may try again.`);
-      setBusy(form, false);
-    } else if (result.status === "success") {
-      finishCheckin();
-    } else {
-      setStatus(`Outcome not confirmed. Contact IT with reference ${token}. Do not submit again.`);
-    }
-  } catch (error) {
-    if (error.missing) {
-      // The server never recorded this request, so nothing was sent to Odoo.
-      localStorage.removeItem(operationKey(kind));
-      setStatus("The previous submission was not received. Please submit again.");
-      setBusy(form, false);
-    } else {
-      setStatus(`Outcome not confirmed. Contact IT with reference ${token}. ${error.message}`);
+  if (!token) return () => {};
+  const controller = new AbortController();
+  let active = true;
+  setStatus(`Checking previous submission (reference ${token}). You can submit again, but this may create a duplicate.`);
+  async function restore() {
+    try {
+      const result = await api(`/api/operations/${encodeURIComponent(token)}`, {signal: controller.signal});
+      if (!active) return;
+      if (result.status === "success" && kind === "customer" && performance.getEntriesByType("navigation")[0]?.type !== "reload") {
+        localStorage.removeItem(operationKey(kind));
+        setStatus("Previous customer was created. Start a new customer.");
+      } else if (result.status === "success" && kind === "customer") {
+        form.dataset.token = token;
+        form.dataset.partnerId = result.partner_id;
+        setStatus(`Customer created: #${result.partner_id}. You can edit on this page.`);
+        $("#submit").textContent = "Update customer";
+      } else if (result.status === "failed") {
+        localStorage.removeItem(operationKey(kind));
+        setStatus(`Request failed (${token}). ${result.detail || ""} You may try again.`);
+      } else if (result.status === "success") {
+        finishCheckin();
+      } else {
+        uncertainStatus(token);
+      }
+    } catch (error) {
+      if (!active) return;
+      if (error.missing) {
+        localStorage.removeItem(operationKey(kind));
+        setStatus("The previous submission was not found. You can submit again, but this may create a duplicate.");
+      } else {
+        uncertainStatus(token, error.message);
+      }
     }
   }
+  restore();
+  return () => { active = false; controller.abort(); };
 }
 
 const customerForm = $("#customer-form");
@@ -435,12 +444,13 @@ if (customerForm) {
   updateLocationSummary();
   customerForm.addEventListener("input", () => saveDraft(customerForm));
   customerForm.addEventListener("change", () => saveDraft(customerForm));
-  restoreOperation(customerForm, "customer");
+  const cancelRestore = restoreOperation(customerForm, "customer");
   customerForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = values(customerForm);
     const digits = (input.phone || "").replace(/\D/g, "");
     if (digits && (digits.length < 8 || digits.length > 10)) { notice("Phone must contain 8–10 digits including the leading 0."); return; }
+    cancelRestore();
     setBusy(customerForm, true);
     notice("");
     let payload;
@@ -471,12 +481,13 @@ if (customerForm) {
         setStatus(`Request failed (${token}). ${result.detail || ""} You may try again.`);
         setBusy(customerForm, false);
       } else {
-        setStatus(`Outcome not confirmed. Contact IT with reference ${token}. Do not submit again.`);
+        uncertainStatus(token);
+        setBusy(customerForm, false);
       }
     } catch (error) {
-      setStatus(editing ? `Update outcome may be unknown. Check Odoo before retrying. ${error.message}`
-        : `Outcome not confirmed. Contact IT with reference ${token}. ${error.message}`);
-      if (editing) setBusy(customerForm, false);
+      if (editing) setStatus(`Update outcome may be unknown. Check Odoo before retrying. ${error.message}`);
+      else uncertainStatus(token, error.message);
+      setBusy(customerForm, false);
     }
   });
   document.querySelectorAll("a[href='/']").forEach((a) => a.addEventListener("click", () => {
@@ -486,13 +497,14 @@ if (customerForm) {
 
 const checkinForm = $("#checkin-form");
 if (checkinForm) {
-  restoreOperation(checkinForm, "checkin");
+  const cancelRestore = restoreOperation(checkinForm, "checkin");
   checkinForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!$("#partner_id").value) { notice("Select a customer."); return; }
     const files = [...$("#visit-photo").files];
     if (files.length < 1 || files.length > 3) { notice("Select 1 to 3 TimeMark photos."); return; }
     if (files.some((file) => file.size > 20 * 1024 * 1024)) { notice("Each photo must be 20 MB or smaller."); return; }
+    cancelRestore();
     setBusy(checkinForm, true);
     notice("");
     $("#download-timemark").hidden = true;
@@ -515,7 +527,10 @@ if (checkinForm) {
         localStorage.removeItem(operationKey("checkin"));
         setStatus(`Check-in failed (${token}). ${result.detail || ""}`);
         setBusy(checkinForm, false);
-      } else setStatus(`Outcome not confirmed. Contact IT with reference ${token}. Do not submit again.`);
+      } else {
+        uncertainStatus(token);
+        setBusy(checkinForm, false);
+      }
     } catch (error) {
       if (error.validation) {
         localStorage.removeItem(operationKey("checkin"));
@@ -523,7 +538,8 @@ if (checkinForm) {
         $("#download-timemark").hidden = false;
         setBusy(checkinForm, false);
       } else {
-        setStatus(`Outcome not confirmed. Contact IT with reference ${token}. ${error.message}`);
+        uncertainStatus(token, error.message);
+        setBusy(checkinForm, false);
       }
     }
   });

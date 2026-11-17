@@ -40,7 +40,7 @@ app, rt = fast_app(
         Meta(name="theme-color", content="#1769aa"),
         Link(rel="manifest", href="/manifest.webmanifest"),
         Link(rel="stylesheet", href="/static/app.css?v=14"),
-        Script(src="/static/app.js?v=13", defer=True),
+        Script(src="/static/app.js?v=14", defer=True),
     ),
     secret_key=secret,
     max_age=31536000,

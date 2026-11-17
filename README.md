@@ -30,11 +30,15 @@ python3 -m venv .venv
 # 设置 .env；本地 HTTP 使用 COOKIE_SECURE=false
 .venv/bin/uvicorn app:app --host 127.0.0.1 --port 8083
 .venv/bin/python -m pytest -q tests
+# 需要 Node.js，验证前端提交与状态恢复
+node --test tests/test_frontend_operations.js
 ```
 
 ## 不确定结果的人工核查
 
-客户创建和打卡不会在超时后自动重试。页面显示的参考编号对应持久化日志；`pending` 表示请求已登记但尚无最终结果，可能仍在处理，也可能进程已中断。**在确认原请求不再运行之前，不得将其判定为失败并重试。** 查询数据库：
+客户创建和打卡不会在超时后自动重试。如果结果不确定或查询状态失败，页面允许用户立即重新提交，并提示可能产生重复客户、打卡消息或附件。每次重新提交使用新的参考编号，原请求仍可能完成；管理员可在 Odoo 中检查并合并重复客户或处理重复打卡。浏览器只保留最近一次提交的编号，如需核查较早的请求，请先记录页面显示的编号。
+
+页面显示的参考编号对应持久化日志；`pending` 表示请求已登记但尚无最终结果，可能仍在处理，也可能进程已中断。人工将请求判定为失败之前，必须确认原请求不再运行。查询数据库：
 
 ```sh
 docker compose exec app python manage_operations.py 参考编号
@@ -52,13 +56,13 @@ docker compose exec app python manage_operations.py 参考编号 --resolve succe
 docker compose exec app python manage_operations.py 参考编号 --resolve success --detail "Verified message in Odoo"
 ```
 
-确认没有产生目标记录，且原请求不会再完成后，可标记失败，再由销售员重新提交：
+确认没有产生目标记录，且原请求不会再完成后，可标记失败：
 
 ```sh
 docker compose exec app python manage_operations.py 参考编号 --resolve failed --detail "Verified no record and original request stopped"
 ```
 
-无法确认时保持原状态。已确认成功或失败的记录不能通过此命令再次更改。客户页面刷新后可恢复非图片字段；出于浏览器限制，照片需要重新选择。已离开创建页面后不能从应用重新打开编辑。
+无法确认时保持原状态；用户仍可选择重新提交并接受重复风险。已确认成功或失败的记录不能通过此命令再次更改。客户页面刷新后可恢复非图片字段；出于浏览器限制，照片需要重新选择。已离开创建页面后不能从应用重新打开编辑。
 
 ## 验证与限制
 
