@@ -8,7 +8,7 @@ const path = require("node:path");
 
 const source = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
 
-function setup(kind, fetch, previousToken = null, navigation = "reload") {
+function setup(kind, fetch, previousToken = null, navigation = "reload", photoFile = null) {
   const handlers = {};
   const button = {disabled: false, textContent: ""};
   const photoControl = {disabled: false};
@@ -24,7 +24,7 @@ function setup(kind, fetch, previousToken = null, navigation = "reload") {
   const notice = {textContent: ""};
   const fields = {
     "#operation-status": status, "#notice": notice, "#submit": button,
-    "#photo": {files: []}, "#partner_id": {value: "7"},
+    "#photo": {files: photoFile ? [photoFile] : []}, "#partner_id": {value: "7"},
     "#visit-photo": {files: [{size: 1}]}, "#download-timemark": {hidden: false},
   };
   fields[`#${kind}-form`] = form;
@@ -51,7 +51,7 @@ function setup(kind, fetch, previousToken = null, navigation = "reload") {
     crypto: {randomUUID: () => `new-token-${++token}`},
     FormData: class { entries() { return Object.entries({name: "Shop", partner_id: "7"}); } },
     FileReader: class {
-      readAsDataURL() { this.result = "data:image/jpeg;base64,photo"; this.onload(); }
+      readAsDataURL(file) { this.file = file; this.result = file.dataUrl || "data:image/jpeg;base64,photo"; this.onload(); }
     },
     AbortController, fetch, location, setTimeout, URL, console,
   };
@@ -158,6 +158,17 @@ test("customer: a confirmed previous success restores editing on reload", async 
   assert.equal(page.form.dataset.partnerId, 42);
   assert.equal(page.form.dataset.token, "old-token");
   assert.equal(page.button.textContent, "Update customer");
+});
+
+test("customer: uploads the selected original photo without conversion", async () => {
+  const photoFile = {dataUrl: "data:image/jpeg;base64,original-photo"};
+  let payload;
+  const page = setup("customer", async (url, options) => {
+    payload = JSON.parse(options.body);
+    return response({status: "success", partner_id: 42});
+  }, null, "reload", photoFile);
+  await page.submit();
+  assert.equal(payload.photo, "original-photo");
 });
 
 test("checkin: a confirmed previous success returns home", async () => {

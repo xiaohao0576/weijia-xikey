@@ -68,7 +68,7 @@ docker compose exec app python manage_operations.py 参考编号 --resolve faile
 
 客户照片和打卡照片选择后会显示缩略图，可点击缩略图上的删除按钮移除，再通过加号选择图片。客户创建成功后，缩略图会在当前页面保留；移除已保存的照片后，需要点击更新客户才能从 Odoo 删除。打卡成功后仍会返回首页。
 
-自动测试使用模拟 Odoo，不替代真实 SaaS 19.4/20.0 上的 API、权限、WebP、消息附件、以及真实手机安装与定位测试。
+客户门头照片直接上传原图，不在浏览器压缩或转换格式。自动测试使用模拟 Odoo，不替代真实 SaaS 19.4/20.0 上的 API、权限、客户原图、打卡消息附件、以及真实手机安装与定位测试。
 
 打卡时先用 TimeMark 拍摄，通过单个相册字段选择 1～3 张原图，每张最多 20 MiB，支持 JPEG、PNG、WebP，不支持 HEIC。照片不经浏览器压缩，以保留元数据，通过 JSON-2 的 `ir.attachment.raw` 以 Base64 传输，因此上传耗时和流量可能较大；反向代理也需允许至少 85 MiB 请求体。服务端依据样张中的 EXIF `Software` 值识别照片：值中任意位置包含 `timemark`（忽略大小写）即通过；尚未确认其他 TimeMark 版本或 XMP 标记。元数据可伪造或被分享、编辑过程删除，不能证明照片来源或现场到访；无法识别时请重新选择原图或使用 [TimeMark 下载链接](https://landing.timemark.com/go?us=official_website&um=direct&uc=owqr_zh-hant)。相册是否保留 EXIF 和多选体验须在目标手机上验证。
 

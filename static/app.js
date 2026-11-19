@@ -259,21 +259,6 @@ function showCustomer(customer, pin) {
   infoWindow.open({map, anchor: pin});
 }
 
-async function compressedPhoto(file) {
-  if (!file) return "";
-  const bitmap = await createImageBitmap(file);
-  try {
-    const scale = Math.min(1, 1920 / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const result = canvas.toDataURL("image/webp", 0.8);
-    if (!result.startsWith("data:image/webp;base64,")) throw new Error("WebP image compression is unavailable on this device.");
-    return result.split(",")[1];
-  } finally { bitmap.close(); }
-}
-
 const phone = $("#phone");
 if (phone) phone.addEventListener("input", () => {
   let digits = phone.value.replace(/\D/g, "");
@@ -343,6 +328,7 @@ document.querySelectorAll(".photo-picker").forEach((picker) => {
 });
 
 function photoBase64(file) {
+  if (!file) return Promise.resolve("");
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result.split(",")[1]);
@@ -457,7 +443,7 @@ if (customerForm) {
     try {
       payload = {...input, phone: digits ? `+855${digits.slice(1)}` : "",
         tags: [...customerForm.querySelectorAll("select[name^='tag_']")].filter((s) => s.value).map((s) => Number(s.value)),
-        photo: await compressedPhoto($("#photo").files[0])};
+        photo: await photoBase64($("#photo").files[0])};
     } catch (error) { notice(`Image preparation failed: ${error.message}`); setBusy(customerForm, false); return; }
     const editing = Boolean(customerForm.dataset.partnerId);
     payload.remove_photo = editing && savedCustomerPhoto && !payload.photo;
