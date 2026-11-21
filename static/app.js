@@ -377,6 +377,7 @@ function restoreOperation(form, kind) {
       } else if (result.status === "success" && kind === "customer") {
         form.dataset.token = token;
         form.dataset.partnerId = result.partner_id;
+        $("#photo").required = false;
         setStatus(`Customer created: #${result.partner_id}. You can edit on this page.`);
         $("#submit").textContent = "Update customer";
       } else if (result.status === "failed") {
@@ -402,7 +403,6 @@ function restoreOperation(form, kind) {
 }
 
 const customerForm = $("#customer-form");
-let savedCustomerPhoto = false;
 function saveDraft(form) {
   const fields = {};
   for (const element of form.elements) {
@@ -435,7 +435,9 @@ if (customerForm) {
     event.preventDefault();
     const input = values(customerForm);
     const digits = (input.phone || "").replace(/\D/g, "");
+    if (!digits) { notice("Phone is required."); return; }
     if (digits && (digits.length < 8 || digits.length > 10)) { notice("Phone must contain 8–10 digits including the leading 0."); return; }
+    if (!input.latitude || !input.longitude) { notice("Select a customer location."); return; }
     cancelRestore();
     setBusy(customerForm, true);
     notice("");
@@ -446,7 +448,6 @@ if (customerForm) {
         photo: await photoBase64($("#photo").files[0])};
     } catch (error) { notice(`Image preparation failed: ${error.message}`); setBusy(customerForm, false); return; }
     const editing = Boolean(customerForm.dataset.partnerId);
-    payload.remove_photo = editing && savedCustomerPhoto && !payload.photo;
     const token = editing ? customerForm.dataset.token : reference();
     payload.token = token;
     if (!editing) localStorage.setItem(operationKey("customer"), token);
@@ -455,8 +456,9 @@ if (customerForm) {
       const result = await api(editing ? `/api/customer/${token}` : "/api/customer",
         {method: editing ? "PUT" : "POST", body: JSON.stringify(payload)});
       if (result.status === "success") {
-        if (payload.photo) savedCustomerPhoto = true;
-        else if (payload.remove_photo) savedCustomerPhoto = false;
+        if (payload.photo) {
+          $("#photo").required = false;
+        }
         customerForm.dataset.partnerId = result.partner_id;
         customerForm.dataset.token = token;
         $("#submit").textContent = "Update customer";
@@ -471,7 +473,10 @@ if (customerForm) {
         setBusy(customerForm, false);
       }
     } catch (error) {
-      if (editing) setStatus(`Update outcome may be unknown. Check Odoo before retrying. ${error.message}`);
+      if (error.validation) {
+        if (!editing) localStorage.removeItem(operationKey("customer"));
+        setStatus(error.message);
+      } else if (editing) setStatus(`Update outcome may be unknown. Check Odoo before retrying. ${error.message}`);
       else uncertainStatus(token, error.message);
       setBusy(customerForm, false);
     }

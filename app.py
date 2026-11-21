@@ -240,10 +240,40 @@ def photo_picker(input_id, label, *, multiple=False, required=False, name=None, 
         Div(Div(cls="photo-previews"),
             Label(Span("+", aria_hidden="true"),
                   Input(type="file", name=name, accept="image/*", id=input_id,
-                        multiple=multiple, required=required, aria_label=f"Add {label}"),
+                        multiple=multiple, required=required,
+                        aria_label=f"Add {label.split(' | ', 1)[0]}"),
                   cls="photo-add"),
             cls="photo-picker"),
         cls="field")
+
+
+def customer_validation_error(data, *, require_photo):
+    if not isinstance(data.get("name"), str) or not data["name"].strip():
+        return "Shop name is required."
+    if not isinstance(data.get("phone"), str) or not data["phone"].strip():
+        return "Phone is required."
+    if data.get("function") not in {"Owner", "Manager", "Staff"}:
+        return "Select a position."
+    if data.get("lang") not in {"zh_CN", "en_US", "km_KH"}:
+        return "Select a customer language."
+    tags = data.get("tags")
+    if not isinstance(tags, list) or not tags or any(
+            not isinstance(tag, int) or isinstance(tag, bool) or tag <= 0 for tag in tags):
+        return "Select at least one tag."
+    if data.get("latitude") in (None, "") or data.get("longitude") in (None, ""):
+        return "Select a customer location."
+    try:
+        encode(float(data["latitude"]), float(data["longitude"]))
+    except (TypeError, ValueError):
+        return "Invalid location."
+    photo = data.get("photo")
+    if require_photo and (not isinstance(photo, str) or not photo):
+        return "Shop photo is required."
+    if photo not in (None, "") and not isinstance(photo, str):
+        return "Invalid shop photo."
+    if data.get("remove_photo") is True and not photo:
+        return "A shop photo is required."
+    return None
 
 
 def map_fields():
@@ -285,24 +315,24 @@ async def get(request: Request):
     tags = [
         Div(Label(name), Select(Option("—", value=""),
                                 *(Option(c["name"], value=str(c["id"])) for c in options),
-                                name=f"tag_{group_id}"), cls="field")
+                                name=f"tag_{group_id}", required=True), cls="field")
         for (group_id, name), options in groups.items()
     ]
     return page("New customer",
         P("Create a new shop profile.", cls="page-subtitle"),
         Form(Div(
             Div(P("01", cls="section-number"), H2("Shop details | ព័ត៌មានហាង", cls="section-title"), cls="card-heading"),
-            Div(Label("Shop name | ឈ្មោះហាង", fr="name"), Input(name="name", id="name"), cls="field"),
+            Div(Label("Shop name | ឈ្មោះហាង", fr="name"), Input(name="name", id="name", required=True), cls="field"),
             Div(Label("Phone | ទូរស័ព្ទ", fr="phone"),
                 Div(Span("+855", cls="phone-prefix", id="phone-prefix"),
                     Input(name="phone", id="phone", inputmode="numeric", autocomplete="tel-national",
-                          aria_describedby="phone-prefix"),
+                          required=True, aria_describedby="phone-prefix"),
                     cls="phone-input"), cls="field"),
-            Div(Label("Position | តួនាទី"), Div(*(Label(Input(type="radio", name="function", value=value), text, cls="choice")
+            Div(Label("Position | តួនាទី"), Div(*(Label(Input(type="radio", name="function", value=value, required=True), text, cls="choice")
                  for value, text in [("Owner", "👑 Owner"), ("Manager", "🧑‍💼 Manager"), ("Staff", "🧑 Staff")]), cls="choices"), cls="field"),
-            Div(Label("Customer language | ភាសាអតិថិជន"), Div(*(Label(Input(type="radio", name="lang", value=value), text, cls="choice")
+            Div(Label("Customer language | ភាសាអតិថិជន"), Div(*(Label(Input(type="radio", name="lang", value=value, required=True), text, cls="choice")
                  for value, text in [("zh_CN", "🇨🇳 中文"), ("en_US", "🇺🇸 English"), ("km_KH", "🇰🇭 ខ្មែរ")]), cls="choices"), cls="field"),
-            photo_picker("photo", "Shop photo | រូបភាពហាង", name="photo"),
+            photo_picker("photo", "Shop photo | រូបភាពហាង", name="photo", required=True),
             cls="panel form-panel"),
             Div(Div(P("02", cls="section-number"), H2("Customer location | ទីតាំងអតិថិជន", cls="section-title"), cls="card-heading"),
                 *hidden_position_fields(),
@@ -312,8 +342,8 @@ async def get(request: Request):
                        aria_haspopup="dialog", aria_controls="customer-map-dialog"),
                 cls="panel form-panel"),
             Div(Div(P("03", cls="section-number"), H2("Tags / ស្លាក", cls="section-title"), cls="card-heading"), *tags,
-            Div(Label("Notes | កំណត់ចំណាំ", fr="comment"), Textarea(name="comment", id="comment"), cls="field"),
-            cls="panel form-panel"),
+                Div(Label("Notes | កំណត់ចំណាំ", fr="comment"), Textarea(name="comment", id="comment"), cls="field"),
+                cls="panel form-panel"),
             P("", id="operation-status", role="status", cls="notice"),
             Button("Create customer", type="submit", id="submit", cls="app-button primary full"),
             id="customer-form"),
@@ -422,6 +452,9 @@ async def post(request: Request):
         if old["employee_id"] != request.session["employee_id"] or old["kind"] != "customer":
             return notice("Invalid request reference.", 403)
         return JSONResponse(operation_result(old))
+    error = customer_validation_error(data, require_photo=True)
+    if error:
+        return JSONResponse({"error": error, "validation": True}, status_code=400)
     values = {"name": data.get("name", ""), "phone": data.get("phone", ""),
               "function": data.get("function") or False, "lang": data.get("lang") or False,
               "comment": html.escape(data.get("comment", "")).replace("\n", "<br>"),
@@ -461,14 +494,15 @@ async def put(request: Request, token: str):
     if not row or row["employee_id"] != request.session["employee_id"] or row["kind"] != "customer" or row["status"] != "success":
         return notice("Customer editing is unavailable.", 403)
     data = await request.json()
+    error = customer_validation_error(data, require_photo=False)
+    if error:
+        return JSONResponse({"error": error, "validation": True}, status_code=400)
     values = {"name": data.get("name", ""), "phone": data.get("phone", ""),
               "function": data.get("function") or False, "lang": data.get("lang") or False,
               "comment": html.escape(data.get("comment", "")).replace("\n", "<br>"),
               "category_id": [[6, 0, data.get("tags", [])]]}
     if data.get("photo"):
         values["image_1920"] = data["photo"]
-    elif data.get("remove_photo") is True:
-        values["image_1920"] = False
     try:
         if data.get("latitude") not in (None, "") and data.get("longitude") not in (None, ""):
             lat, lon = float(data["latitude"]), float(data["longitude"])

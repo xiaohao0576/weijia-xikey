@@ -75,6 +75,12 @@ def image_data(software="Timemark v10.0.316"):
     return base64.b64encode(content.getvalue()).decode()
 
 
+def valid_customer_payload(token):
+    return {"token": token, "name": "Shop", "phone": "+85512345678",
+            "function": "Owner", "lang": "en_US", "photo": "shop-photo",
+            "latitude": 11.55, "longitude": 104.92, "tags": [10]}
+
+
 def test_login_and_pages(monkeypatch, tmp_path):
     browser, fake = client(monkeypatch, tmp_path)
     home = browser.get("/").text
@@ -92,6 +98,10 @@ def test_login_and_pages(monkeypatch, tmp_path):
     assert 'aria-label="Add Shop photo"' in customer.text
     assert 'id="phone-prefix"' in customer.text and "+855" in customer.text
     assert 'aria-describedby="phone-prefix"' in customer.text
+    for field in ('name="name"', 'name="phone"', 'name="function"', 'name="lang"', 'id="photo"'):
+        assert re.search(rf'<input(?=[^>]*{re.escape(field)})(?=[^>]*\brequired\b)[^>]*>', customer.text)
+    assert re.search(r'<select(?=[^>]*name="tag_2")(?=[^>]*\brequired\b)[^>]*>', customer.text)
+    assert not re.search(r'<textarea(?=[^>]*name="comment")(?=[^>]*\brequired\b)[^>]*>', customer.text)
     assert "Phone (+855)" not in customer.text
     form_end = customer.text.index("</form>")
     for marker in ('id="latitude"', 'id="longitude"', 'id="accuracy"', 'id="open-customer-map"'):
@@ -192,8 +202,7 @@ def test_welcome_photo_not_fetched_before_login_or_after_expiration(monkeypatch,
 def test_create_deduplicates_and_edit_keeps_owner(monkeypatch, tmp_path):
     browser, fake = client(monkeypatch, tmp_path)
     token = str(uuid.uuid4())
-    payload = {"token": token, "name": "Shop", "phone": "+85512345678",
-               "latitude": 11.55, "longitude": 104.92, "tags": [10]}
+    payload = valid_customer_payload(token)
     first = browser.post("/api/customer", json=payload).json()
     second = browser.post("/api/customer", json=payload).json()
     assert first["status"] == second["status"] == "success"
@@ -209,19 +218,36 @@ def test_create_deduplicates_and_edit_keeps_owner(monkeypatch, tmp_path):
     assert write[2]["vals"]["zip"] == "w649ew87t"
 
 
+def test_customer_requires_every_non_notes_field(monkeypatch, tmp_path):
+    browser, fake = client(monkeypatch, tmp_path)
+    missing_fields = ("name", "phone", "function", "lang", "photo",
+                      "latitude", "longitude", "tags")
+    for field in missing_fields:
+        payload = valid_customer_payload(str(uuid.uuid4()))
+        payload.pop(field)
+        response = browser.post("/api/customer", json=payload)
+        assert response.status_code == 400
+        assert response.json()["validation"] is True
+    assert not [call for call in fake.calls if call[:2] == ("res.partner", "create")]
+
+
 def test_customer_update_removes_photo_only_when_requested(monkeypatch, tmp_path):
     browser, fake = client(monkeypatch, tmp_path)
     token = str(uuid.uuid4())
-    payload = {"token": token, "name": "Shop", "photo": "original"}
+    payload = valid_customer_payload(token)
+    payload["photo"] = "original"
     assert browser.post("/api/customer", json=payload).json()["status"] == "success"
 
-    assert browser.put(f"/api/customer/{token}", json={"name": "Shop"}).status_code == 200
+    update = {key: value for key, value in payload.items() if key != "photo"}
+    assert browser.put(f"/api/customer/{token}", json=update).status_code == 200
     assert "image_1920" not in fake.calls[-1][2]["vals"]
 
-    assert browser.put(f"/api/customer/{token}", json={"name": "Shop", "remove_photo": True}).status_code == 200
-    assert fake.calls[-1][2]["vals"]["image_1920"] is False
+    removal = {**update, "remove_photo": True}
+    response = browser.put(f"/api/customer/{token}", json=removal)
+    assert response.status_code == 400 and response.json()["validation"] is True
 
-    assert browser.put(f"/api/customer/{token}", json={"name": "Shop", "photo": "replacement", "remove_photo": True}).status_code == 200
+    replacement = {**update, "photo": "replacement", "remove_photo": True}
+    assert browser.put(f"/api/customer/{token}", json=replacement).status_code == 200
     assert fake.calls[-1][2]["vals"]["image_1920"] == "replacement"
 
 
@@ -229,9 +255,10 @@ def test_uncertain_create_is_persisted_and_never_retried(monkeypatch, tmp_path):
     browser, fake = client(monkeypatch, tmp_path)
     fake.fail_method = "create"
     token = str(uuid.uuid4())
-    first = browser.post("/api/customer", json={"token": token, "name": "Shop"}).json()
+    payload = valid_customer_payload(token)
+    first = browser.post("/api/customer", json=payload).json()
     fake.fail_method = None
-    second = browser.post("/api/customer", json={"token": token, "name": "Shop"}).json()
+    second = browser.post("/api/customer", json=payload).json()
     assert first["status"] == second["status"] == "unknown"
     assert browser.get(f"/api/operations/{token}").json()["status"] == "unknown"
     assert len([c for c in fake.calls if c[1] == "create"]) == 1

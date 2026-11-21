@@ -8,7 +8,7 @@ const path = require("node:path");
 
 const source = fs.readFileSync(path.join(__dirname, "../static/app.js"), "utf8");
 
-function setup(kind, fetch, previousToken = null, navigation = "reload", photoFile = null) {
+function setup(kind, fetch, previousToken = null, navigation = "reload", photoFile = null, locationSelected = true) {
   const handlers = {};
   const button = {disabled: false, textContent: ""};
   const photoControl = {disabled: false};
@@ -24,7 +24,8 @@ function setup(kind, fetch, previousToken = null, navigation = "reload", photoFi
   const notice = {textContent: ""};
   const fields = {
     "#operation-status": status, "#notice": notice, "#submit": button,
-    "#photo": {files: photoFile ? [photoFile] : []}, "#partner_id": {value: "7"},
+    "#photo": {files: photoFile ? [photoFile] : kind === "customer" ? [{dataUrl: "data:image/jpeg;base64,shop"}] : [], required: true},
+    "#partner_id": {value: "7"},
     "#visit-photo": {files: [{size: 1}]}, "#download-timemark": {hidden: false},
   };
   fields[`#${kind}-form`] = form;
@@ -49,7 +50,14 @@ function setup(kind, fetch, previousToken = null, navigation = "reload", photoFi
       getItem: () => null, setItem() {}, removeItem() {},
     },
     crypto: {randomUUID: () => `new-token-${++token}`},
-    FormData: class { entries() { return Object.entries({name: "Shop", partner_id: "7"}); } },
+    FormData: class {
+      entries() {
+        return Object.entries(kind === "customer"
+          ? {name: "Shop", phone: "012345678", function: "Owner", lang: "en_US",
+            latitude: locationSelected ? "11.55" : "", longitude: locationSelected ? "104.92" : ""}
+          : {name: "Shop", partner_id: "7"});
+      }
+    },
     FileReader: class {
       readAsDataURL(file) { this.file = file; this.result = file.dataUrl || "data:image/jpeg;base64,photo"; this.onload(); }
     },
@@ -57,7 +65,7 @@ function setup(kind, fetch, previousToken = null, navigation = "reload", photoFi
   };
   vm.runInNewContext(source, context);
   return {
-    button, photoControl, status, storage, form, location,
+    button, photoControl, status, notice, storage, form, location, photo: fields["#photo"],
     submit: () => handlers.submit({preventDefault() {}}),
   };
 }
@@ -158,6 +166,7 @@ test("customer: a confirmed previous success restores editing on reload", async 
   assert.equal(page.form.dataset.partnerId, 42);
   assert.equal(page.form.dataset.token, "old-token");
   assert.equal(page.button.textContent, "Update customer");
+  assert.equal(page.photo.required, false);
 });
 
 test("customer: uploads the selected original photo without conversion", async () => {
@@ -169,6 +178,19 @@ test("customer: uploads the selected original photo without conversion", async (
   }, null, "reload", photoFile);
   await page.submit();
   assert.equal(payload.photo, "original-photo");
+  assert.equal(page.form.dataset.partnerId, 42);
+  assert.equal(page.photo.required, false);
+});
+
+test("customer: location is required before submitting", async () => {
+  let submitted = false;
+  const page = setup("customer", async () => {
+    submitted = true;
+    return response({status: "success", partner_id: 42});
+  }, null, "reload", null, false);
+  await page.submit();
+  assert.equal(submitted, false);
+  assert.match(page.notice.textContent, /location/i);
 });
 
 test("checkin: a confirmed previous success returns home", async () => {
