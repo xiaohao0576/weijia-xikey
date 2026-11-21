@@ -40,7 +40,7 @@ app, rt = fast_app(
         Meta(name="theme-color", content="#1769aa"),
         Link(rel="manifest", href="/manifest.webmanifest"),
         Link(rel="stylesheet", href="/static/app.css?v=14"),
-        Script(src="/static/app.js?v=14", defer=True),
+        Script(src="/static/app.js?v=15", defer=True),
     ),
     secret_key=secret,
     max_age=31536000,
@@ -52,6 +52,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 store = Store(str(Path(os.getenv("DATA_DIR", "data")) / "operations.sqlite3"))
 odoo = OdooClient(os.getenv("ODOO_URL", ""), os.getenv("ODOO_DATABASE", ""), os.getenv("ODOO_API_KEY", ""))
 maps_key = os.getenv("GOOGLE_MAPS_KEY", "")
+NEARBY_LIMIT = 300
 
 
 def page(title, *content, home=False):
@@ -410,19 +411,26 @@ async def get(request: Request):
         prefixes = nearby_prefixes(lat, lon)
     except (KeyError, ValueError):
         return notice("Invalid location.")
-    domain = ["|"] * (len(prefixes) - 1) + [["zip", "=like", p + "%"] for p in prefixes]
-    if request.query_params.get("filter") == "mine":
-        domain = ["&", ["x_employee_id", "=", request.session["employee_id"]]] + domain
+    employee_id = request.session["employee_id"]
+    fields = ["id", "name", "image_512", "barcode", "partner_latitude", "partner_longitude", "x_employee_id"]
     try:
-        records = await call("res.partner", "search_read", domain=domain, limit=100,
-                             fields=["id", "name", "image_512", "barcode", "partner_latitude", "partner_longitude", "x_employee_id"])
+        # The salesperson's own customers are always included, regardless of distance.
+        records = await call("res.partner", "search_read",
+                             domain=[["x_employee_id", "=", employee_id]], limit=NEARBY_LIMIT, fields=fields)
+        if request.query_params.get("filter") != "mine" and len(records) < NEARBY_LIMIT:
+            domain = (["&", ["x_employee_id", "!=", employee_id]]
+                      + ["|"] * (len(prefixes) - 1) + [["zip", "=like", p + "%"] for p in prefixes])
+            others = await call("res.partner", "search_read", domain=domain,
+                                limit=NEARBY_LIMIT - len(records), fields=fields)
+            mine_ids = {record["id"] for record in records}
+            records += [record for record in others if record["id"] not in mine_ids]
     except OdooError:
         log.exception("Nearby lookup failed")
         return notice("Could not load customers from Odoo.", 502)
     for record in records:
         owner = record.pop("x_employee_id", False)
         record["mine"] = (owner[0] if isinstance(owner, list) else owner) == request.session["employee_id"]
-    return JSONResponse({"customers": records, "limit_reached": len(records) == 100})
+    return JSONResponse({"customers": records, "limit_reached": len(records) == NEARBY_LIMIT})
 
 
 @rt("/api/operations/{token}")

@@ -269,9 +269,10 @@ def test_nearby_and_checkin(monkeypatch, tmp_path):
     browser, fake = client(monkeypatch, tmp_path)
     result = browser.get("/api/nearby?lat=11.55&lon=104.92&filter=mine").json()
     assert result["customers"][0]["mine"]
-    query = [c for c in fake.calls if c[0] == "res.partner" and c[1] == "search_read"][0]
-    assert query[2]["limit"] == 100
-    assert ["x_employee_id", "=", 1] in query[2]["domain"]
+    queries = [c for c in fake.calls if c[0] == "res.partner" and c[1] == "search_read"]
+    assert len(queries) == 1
+    assert queries[0][2]["limit"] == 300
+    assert queries[0][2]["domain"] == [["x_employee_id", "=", 1]]
     token = str(uuid.uuid4())
     photo = image_data()
     payload = {"token": token, "partner_id": 7, "latitude": 11.55, "longitude": 104.92,
@@ -372,12 +373,26 @@ def test_geohash_coverage_across_boundaries():
 def test_nearby_query_uses_common_prefix_for_old_and_new_hashes(monkeypatch, tmp_path):
     browser, fake = client(monkeypatch, tmp_path)
     assert browser.get("/api/nearby?lat=11.55&lon=104.92&filter=all").status_code == 200
-    query = next(c for c in fake.calls if c[0] == "res.partner" and c[1] == "search_read")
+    query = next(c for c in fake.calls if c[0] == "res.partner" and c[1] == "search_read"
+                 and any(isinstance(term, list) and term[:2] == ["zip", "=like"] for term in c[2]["domain"]))
     prefixes = [term[2][:-1] for term in query[2]["domain"] if isinstance(term, list) and term[:2] == ["zip", "=like"]]
     assert "w649e" in prefixes
     assert "w649ew8".startswith(tuple(prefixes))
     assert "w649ew87".startswith(tuple(prefixes))
     assert "w649ew87t".startswith(tuple(prefixes))
+
+
+def test_nearby_always_includes_own_customers_without_distance_limit(monkeypatch, tmp_path):
+    browser, fake = client(monkeypatch, tmp_path)
+    result = browser.get("/api/nearby?lat=11.55&lon=104.92&filter=all").json()
+    queries = [c for c in fake.calls if c[0] == "res.partner" and c[1] == "search_read"]
+    assert len(queries) == 2
+    assert queries[0][2]["domain"] == [["x_employee_id", "=", 1]]
+    assert ["x_employee_id", "!=", 1] in queries[1][2]["domain"]
+    assert any(isinstance(term, list) and term[:2] == ["zip", "=like"] for term in queries[1][2]["domain"])
+    # FakeOdoo returns one "mine" record, so the second query fills the remaining slots.
+    assert queries[0][2]["limit"] == 300 and queries[1][2]["limit"] == 299
+    assert [c["id"] for c in result["customers"]] == [7]
 
 
 def test_session_expiration(monkeypatch, tmp_path):

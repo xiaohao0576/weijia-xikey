@@ -212,7 +212,7 @@ async function loadNearby() {
       pin.addListener("click", () => showCustomer(customer, pin));
       customerMarkers.push(pin);
     }
-    notice(data.limit_reached ? "Showing up to 100 customers." : `${data.customers.length} customers found.`);
+    notice(data.limit_reached ? "Showing up to 300 customers." : `${data.customers.length} customers found.`);
   } catch (error) { notice(error.message); }
 }
 
