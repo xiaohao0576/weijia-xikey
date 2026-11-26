@@ -63,7 +63,8 @@ window.mapsReady = () => {
 
 function initializeMap() {
   if (map) return;
-  map = new google.maps.Map($("#map"), {center: {lat: 11.5564, lng: 104.9282}, zoom: 14, mapTypeControl: false, streetViewControl: false});
+  const zoom = $("#customer-form") ? 20 : $("#checkin-form") ? 18 : 15;
+  map = new google.maps.Map($("#map"), {center: {lat: 11.5564, lng: 104.9282}, zoom, mapTypeControl: false, streetViewControl: false});
   infoWindow = new google.maps.InfoWindow();
   if ($("#customer-form")) {
     map.addListener("click", (event) => setPosition(event.latLng.lat(), event.latLng.lng()));

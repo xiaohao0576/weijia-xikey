@@ -219,3 +219,64 @@ test("cancelled restore does not redirect on a late login response", async () =>
   post.resolve(response({status: "unknown"}));
   await submitting;
 });
+
+for (const [kind, expectedZoom] of [["checkin", 18], ["customer", 20], ["nearby", 15]]) {
+  test(`${kind}: map initializes at the page's default zoom`, () => {
+    function element() {
+      return {
+        handlers: {},
+        addEventListener(name, handler) { this.handlers[name] = handler; },
+        focus() {},
+      };
+    }
+    const form = {...element(), dataset: {}, querySelectorAll: () => []};
+    const dialog = {
+      ...element(), open: false,
+      showModal() { this.open = true; },
+      close() { this.open = false; this.handlers.close(); },
+    };
+    const fields = {
+      "#map": element(), "#notice": element(), "#map-notice": element(),
+      "#location-status": element(), "#confirm-location": element(),
+      "#open-customer-map": element(), "#close-customer-map": element(),
+    };
+    if (kind === "nearby") fields["#filter"] = element();
+    else {
+      fields[`#${kind}-form`] = form;
+      fields["#customer-map-dialog"] = dialog;
+    }
+    const maps = [];
+    const context = {
+      document: {querySelector: (selector) => fields[selector] || null, querySelectorAll: () => []},
+      window: {}, navigator: {},
+      google: {maps: {
+        Map: class {
+          constructor(node, options) { this.zoom = options.zoom; maps.push(this); }
+          addListener() {}
+          panTo() {}
+        },
+        InfoWindow: class { close() {} },
+        event: {trigger() {}},
+      }},
+      performance: {getEntriesByType: () => [{type: "reload"}]},
+      localStorage: {getItem: () => null},
+      sessionStorage: {getItem: () => null, removeItem() {}},
+      setTimeout() {},
+    };
+    vm.runInNewContext(source, context);
+    context.window.mapsReady();
+    if (kind !== "nearby") {
+      assert.equal(maps.length, 0);
+      fields["#open-customer-map"].handlers.click();
+    }
+    assert.equal(maps.length, 1);
+    assert.equal(maps[0].zoom, expectedZoom);
+    if (kind !== "nearby") {
+      maps[0].zoom = 12;
+      dialog.close();
+      fields["#open-customer-map"].handlers.click();
+      assert.equal(maps.length, 1);
+      assert.equal(maps[0].zoom, 12);
+    }
+  });
+}
