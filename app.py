@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import hmac
 import html
 import logging
@@ -16,6 +17,7 @@ from fasthtml.common import (
     Option, P, Script, Select, Span, Textarea, Title, fast_app,
 )
 from monsterui.all import Theme
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.staticfiles import StaticFiles
@@ -33,14 +35,20 @@ secret = os.environ.get("SESSION_SECRET", "")
 if not secret:
     raise RuntimeError("SESSION_SECRET must be configured")
 
+
+def static_version(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+
+
+static_dir = Path(__file__).resolve().parent / "static"
 app, rt = fast_app(
     hdrs=(
         *Theme.blue.headers(),
         Meta(name="viewport", content="width=device-width, initial-scale=1"),
         Meta(name="theme-color", content="#1769aa"),
         Link(rel="manifest", href="/manifest.webmanifest"),
-        Link(rel="stylesheet", href="/static/app.css?v=14"),
-        Script(src="/static/app.js?v=15", defer=True),
+        Link(rel="stylesheet", href=f"/static/app.css?v={static_version(static_dir / 'app.css')}"),
+        Script(src=f"/static/app.js?v={static_version(static_dir / 'app.js')}", defer=True),
     ),
     secret_key=secret,
     max_age=31536000,
@@ -48,7 +56,19 @@ app, rt = fast_app(
     same_site="lax",
     pico=False,
 )
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+async def revalidate_html(request: Request, call_next):
+    response = await call_next(request)
+    if response.headers.get("content-type", "").startswith("text/html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+app.add_middleware(BaseHTTPMiddleware, dispatch=revalidate_html)
+
+
 store = Store(str(Path(os.getenv("DATA_DIR", "data")) / "operations.sqlite3"))
 odoo = OdooClient(os.getenv("ODOO_URL", ""), os.getenv("ODOO_DATABASE", ""), os.getenv("ODOO_API_KEY", ""))
 maps_key = os.getenv("GOOGLE_MAPS_KEY", "")
@@ -123,7 +143,8 @@ def get():
 
 @rt("/service-worker")
 def get():
-    return Response("self.addEventListener('fetch', () => {});", media_type="text/javascript", headers={"Service-Worker-Allowed": "/"})
+    return Response("self.addEventListener('fetch', () => {});", media_type="text/javascript",
+                    headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
 
 
 @rt("/")

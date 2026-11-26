@@ -2,8 +2,10 @@ import os
 import re
 import uuid
 import base64
+import hashlib
 import io
 from datetime import datetime, timezone
+from pathlib import Path
 from PIL import Image
 import pytest
 
@@ -79,6 +81,28 @@ def valid_customer_payload(token):
     return {"token": token, "name": "Shop", "phone": "+85512345678",
             "function": "Owner", "lang": "en_US", "photo": "shop-photo",
             "latitude": 11.55, "longitude": 104.92, "tags": [10]}
+
+
+def test_static_versions_and_cache_revalidation(monkeypatch, tmp_path):
+    browser, _ = client(monkeypatch, tmp_path)
+    for route in ("/", "/customer", "/nearby", "/checkin"):
+        response = browser.get(route)
+        assert response.headers["cache-control"] == "no-cache"
+        for name in ("app.js", "app.css"):
+            content = (Path(application.__file__).resolve().parent / "static" / name).read_bytes()
+            version = hashlib.sha256(content).hexdigest()[:16]
+            assert f"/static/{name}?v={version}" in response.text
+            assert browser.get(f"/static/{name}?v={version}").content == content
+
+    worker = browser.get("/service-worker")
+    assert worker.headers["cache-control"] == "no-cache"
+    assert worker.headers["service-worker-allowed"] == "/"
+
+    asset = tmp_path / "asset.js"
+    asset.write_text("first")
+    first_version = application.static_version(asset)
+    asset.write_text("second")
+    assert application.static_version(asset) != first_version
 
 
 def test_login_and_pages(monkeypatch, tmp_path):
